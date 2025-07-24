@@ -5,12 +5,22 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Send, Bot, User, Sparkles } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { ChartRenderer } from './ChartRenderer';
 
 interface Message {
   id: string;
   type: 'user' | 'ai';
   content: string;
   timestamp: Date;
+  chartData?: {
+    type: 'bar' | 'line' | 'pie' | 'area';
+    data: any[];
+    title?: string;
+    xKey?: string;
+    yKey?: string;
+    nameKey?: string;
+    valueKey?: string;
+  };
 }
 
 const GEMINI_API_KEY = 'AIzaSyAHLMNqcJIyRZ47_izGxu9yt4gwBHBSphI';
@@ -34,6 +44,21 @@ export const ChatInterface = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const parseChartData = (content: string) => {
+    const chartMatch = content.match(/<CHART>([\s\S]*?)<\/CHART>/);
+    if (chartMatch) {
+      try {
+        const chartConfig = JSON.parse(chartMatch[1].trim());
+        const cleanContent = content.replace(/<CHART>[\s\S]*?<\/CHART>/, '').trim();
+        return { content: cleanContent, chartData: chartConfig };
+      } catch (error) {
+        console.error('Error parsing chart data:', error);
+        return { content };
+      }
+    }
+    return { content };
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -61,7 +86,24 @@ export const ChatInterface = () => {
             {
               parts: [
                 {
-                  text: `You are an AI search assistant inspired by Perplexity. Provide helpful, accurate, and well-structured answers. Be conversational and engaging while being informative. Question: ${currentInput}`
+                  text: `You are an AI search assistant inspired by Perplexity. Provide helpful, accurate, and well-structured answers. Be conversational and engaging while being informative.
+
+When answering data-driven questions that would benefit from visualization, include a JSON chart configuration at the end of your response using this format:
+
+<CHART>
+{
+  "type": "bar|line|pie|area",
+  "title": "Chart Title",
+  "data": [
+    {"name": "Category1", "value": 100},
+    {"name": "Category2", "value": 200}
+  ],
+  "xKey": "name",
+  "yKey": "value"
+}
+</CHART>
+
+Question: ${currentInput}`
                 }
               ]
             }
@@ -82,11 +124,15 @@ export const ChatInterface = () => {
       const data = await response.json();
       
       if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+        const rawContent = data.candidates[0].content.parts[0].text;
+        const { content, chartData } = parseChartData(rawContent);
+        
         const aiMessage: Message = {
           id: (Date.now() + 1).toString(),
           type: 'ai',
-          content: data.candidates[0].content.parts[0].text,
+          content: content,
           timestamp: new Date(),
+          chartData: chartData,
         };
         setMessages(prev => [...prev, aiMessage]);
       } else {
@@ -164,14 +210,17 @@ export const ChatInterface = () => {
                 </AvatarFallback>
               </Avatar>
               
-              <div className={`chat-message ${message.type === 'user' ? 'chat-user' : 'chat-ai'}`}>
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
-                </div>
-                <div className="text-xs text-muted-foreground mt-2">
-                  {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </div>
-              </div>
+               <div className={`chat-message ${message.type === 'user' ? 'chat-user' : 'chat-ai'}`}>
+                 <div className="prose prose-sm max-w-none dark:prose-invert">
+                   <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                 </div>
+                 {message.chartData && (
+                   <ChartRenderer chartData={message.chartData} />
+                 )}
+                 <div className="text-xs text-muted-foreground mt-2">
+                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                 </div>
+               </div>
             </div>
           ))}
           
